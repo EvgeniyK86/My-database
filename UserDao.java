@@ -1,101 +1,159 @@
-package org.myfirstdatabase.dao;
+package by.itacademy.hibernate.dao;
 
+
+import by.itacademy.hibernate.entity.*;
+import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Order;
+import com.querydsl.core.types.OrderSpecifier;
+import com.querydsl.jpa.impl.JPAQuery;
+import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
-import lombok.SneakyThrows;
-import org.myfirstdatabase.entity.Gender;
-import org.myfirstdatabase.entity.Role;
-import org.myfirstdatabase.entity.User;
-import org.myfirstdatabase.utils.ConnectionManager;
+import org.hibernate.Session;
 
-import java.sql.Date;
-import java.sql.ResultSet;
+import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
-import static java.sql.Statement.RETURN_GENERATED_KEYS;
-import static lombok.AccessLevel.PRIVATE;
+import static by.itacademy.hibernate.entity.QCompany.company;
+import static by.itacademy.hibernate.entity.QPayment.payment;
+import static by.itacademy.hibernate.entity.QUser.user;
 
-@NoArgsConstructor(access = PRIVATE)
-public class UserDao implements Dao<Integer, User> {
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
+public class UserDao {
 
     private static final UserDao INSTANCE = new UserDao();
 
-    private static final String SAVE_SQL =
-            "INSERT INTO users (name, birthday, email, password, role, gender) VALUES (?, ?, ?, ?, ?, ?)";
+    /**
+     * Возвращает всех сотрудников
+     */
+    public List<User> findAll(Session session) {
+       /* var cb = session.getCriteriaBuilder();
+        var criteria = cb.createQuery(User.class);
+        var user = criteria.from(User.class);
+        criteria.select(user);
+        return session.createQuery(criteria).list();
 
-    private static final String GET_BY_EMAIL_AND_PASSWORD_SQL =
-            "SELECT * FROM users WHERE email = ? AND password = ?";
+//     return session.createQuery("select u from User u", User.class).list();*/
 
-
-    @SneakyThrows
-    public Optional<User> findByEmailAndPassword(String email, String password) {
-        try (var connection = ConnectionManager.get();
-             var preparedStatement = connection.prepareStatement(GET_BY_EMAIL_AND_PASSWORD_SQL)) {
-            preparedStatement.setString(1, email);
-            preparedStatement.setString(2, password);
-
-            var resultSet = preparedStatement.executeQuery();
-            User user = null;
-            if (resultSet.next()) {
-                user = buildEntity(resultSet);
-            }
-            return Optional.ofNullable(user);
-        }
+        return new JPAQuery<User>(session).select(user).from(user).fetch();
     }
 
+    /**
+     * Возвращает всех сотрудников с указанным именем
+     */
+    public List<User> findAllByFirstName(Session session, String firstName) {
+        /*var cb = session.getCriteriaBuilder();
+        var criteria = cb.createQuery(User.class);
+        var user = criteria.from(User.class);
+//        criteria.select(user).where(cb.equal(user.get(User_.personalInfo).get(PersonalInfo_.firstname), firstName));
+        return session.createQuery(criteria).list();*/
 
-    private User buildEntity(ResultSet resultSet) throws java.sql.SQLException {
-        return User.builder()
-                .id(resultSet.getObject("id", Integer.class))
-                .name(resultSet.getObject("name", String.class))
-                .birthday(resultSet.getObject("birthday", Date.class).toLocalDate())
-                .email(resultSet.getObject("email", String.class))
-                .password(resultSet.getObject("password", String.class))
-                .role(Role.find(resultSet.getObject("role", String.class)).orElse(null))
-                .gender(Gender.valueOf(resultSet.getObject("gender", String.class)))
-                .build();
+        return new JPAQuery<User>(session).select(user).from(user)
+                .where(user.personalInfo().firstname.eq(firstName))
+                .fetch();
     }
 
-    @Override
-    @SneakyThrows
-    public User save(User entity) {
-        try (var connection = ConnectionManager.get();
-             var preparedStatement = connection.prepareStatement(SAVE_SQL, RETURN_GENERATED_KEYS)) {
-            preparedStatement.setObject(1, entity.getName());
-            preparedStatement.setObject(2, entity.getBirthday());
-            preparedStatement.setObject(3, entity.getEmail());
-            preparedStatement.setObject(4, entity.getPassword());
-            preparedStatement.setObject(5, entity.getRole().name());
-            preparedStatement.setObject(6, entity.getGender().name());
-
-            preparedStatement.executeUpdate();
-
-            var generatedKeys = preparedStatement.getGeneratedKeys();
-            generatedKeys.next();
-            entity.setId(generatedKeys.getObject("id", Integer.class));
-
-            return entity;
-        }
+    /**
+     * Возвращает первые {limit} сотрудников, упорядоченных по дате рождения (в порядке возрастания)
+     */
+    public List<User> findLimitedUsersOrderedByBirthday(Session session, int limit) {
+        return new JPAQuery<User>(session).select(user).from(user)
+                .orderBy(new OrderSpecifier(Order.ASC, user.personalInfo().birthDate))
+                .limit(limit)
+                .fetch();
     }
 
-    @Override
-    public List<User> findAll() {
-        return null;
+    /**
+     * Возвращает всех сотрудников компании с указанным названием
+     */
+    public List<User> findAllByCompanyName(Session session, String companyName) {
+        return new JPAQuery<User>(session).
+                select(user).
+                from(company)
+                .join(company.users, user)
+                .where(company.name.eq(companyName))
+                .fetch();
     }
 
-    @Override
-    public Optional<User> findById(Integer id) {
-        return Optional.empty();
+    /**
+     * Возвращает все выплаты, полученные сотрудниками компании с указанными именем,
+     * упорядоченные по имени сотрудника, а затем по размеру выплаты
+     */
+    public List<Payment> findAllPaymentsByCompanyName(Session session, String companyName) {
+        /*var cb = session.getCriteriaBuilder();
+        var criteria = cb.createQuery(Payment.class);
+        var payment = criteria.from(Payment.class);
+        //       var user = payment.join(Payment_.receiver);
+        //       var company = user.join(User_.company);
+
+        *//*criteria.select(payment).where(
+                        cb.equal(company.get(Company_.name), companyName)
+                )
+                .orderBy(
+                        cb.asc(user.get(User_.personalInfo).get(PersonalInfo_.firstname)),
+                        cb.asc(payment.get(Payment_.amount))
+                );*//*
+
+        return session.createQuery(criteria).list();*/
+        return new JPAQuery<Payment>(session)
+                .select(payment)
+                .from(payment)
+                .join(payment.receiver(), user)
+                .where(user.company().name.eq(companyName))
+                .orderBy(user.personalInfo().firstname.asc(),
+                        payment.amount.asc())
+                .fetch();
+
+
     }
 
-    @Override
-    public boolean delete(Integer id) {
-        return false;
+    /**
+     * Возвращает среднюю зарплату сотрудника с указанными именем и фамилией
+     */
+    public Double findAveragePaymentAmountByFirstAndLastNames(Session session, String firstName, String lastName) {
+        return new JPAQuery<Double>(session)
+                .select(payment.amount.avg())
+                .from(payment)
+                .join(payment.receiver(), user)
+                .where(user.personalInfo().firstname.eq(firstName),
+                        user.personalInfo().lastname.eq(lastName))
+                .fetchOne();
     }
 
-    @Override
-    public boolean update(User entity) {
-        return false;
+    /**
+     * Возвращает для каждой компании: название, среднюю зарплату всех её сотрудников. Компании упорядочены по названию.
+     */
+    public List<Tuple> findCompanyNamesWithAvgUserPaymentsOrderedByCompanyName(Session session) {
+        return new JPAQuery<Tuple>(session)
+                .select(company.name, payment.amount.avg())
+                .from(company)
+                .join(company.users, user)
+                .join(user.payments, payment)
+                .groupBy(company.name)
+                .orderBy(company.name.asc())
+                .fetch();
+    }
+
+    /**
+     * Возвращает список: сотрудник (объект User), средний размер выплат, но только для тех сотрудников, чей средний размер выплат
+     * больше среднего размера выплат всех сотрудников
+     * Упорядочить по имени сотрудника
+     */
+    public List<Tuple> isItPossible(Session session) {
+
+        return new JPAQuery<Tuple>(session)
+                .select(user, payment.amount.avg())
+                .from(user)
+                .join(user.payments, payment)
+                .groupBy(user.id)
+                .having(
+                        payment.amount.avg().gt(
+                                new JPAQuery<Double>(session)
+                                        .select(payment.amount.avg())
+                                        .from(payment)
+                        )
+                )
+                .orderBy(user.personalInfo().firstname.asc())
+                .fetch();
     }
 
     public static UserDao getInstance() {
